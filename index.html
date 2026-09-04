@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>画像マッピングツール</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #f4f5f7;
+      color: #222;
+    }
+
+    header {
+      background: #222;
+      color: white;
+      padding: 18px 24px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+
+    .panel {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 3px 15px rgba(0,0,0,0.08);
+    }
+
+    .panel h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    input[type="file"] {
+      margin-bottom: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .primary {
+      background: #2563eb;
+      color: white;
+    }
+
+    .danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    .secondary {
+      background: #e5e7eb;
+      color: #222;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    /* マップ */
+    .map-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }
+
+    #baseImage {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      cursor: crosshair;
+    }
+
+    /* マーカー */
+    .marker {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+
+      transform: translate(-50%, -50%);
+
+      border-radius: 50%;
+      background: #ef4444;
+      border: 3px solid white;
+
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+
+      cursor: pointer;
+
+      z-index: 5;
+    }
+
+    .marker:hover {
+      transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    /* ポップアップ */
+    .preview-popup {
+      position: fixed;
+
+      display: none;
+
+      width: 300px;
+
+      background: white;
+
+      border-radius: 12px;
+
+      padding: 10px;
+
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+
+      z-index: 1000;
+    }
+
+    .preview-popup img {
+      width: 100%;
+      display: block;
+      border-radius: 8px;
+    }
+
+    .marker-list {
+      margin-top: 20px;
+    }
+
+    .marker-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      padding: 12px;
+
+      border-bottom: 1px solid #eee;
+    }
+
+    .marker-item:last-child {
+      border-bottom: none;
+    }
+
+    .empty {
+      color: #888;
+      font-size: 14px;
+    }
+
+    .hint {
+      color: #666;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>画像マッピングツール</h1>
+</header>
+
+
+<div class="container">
+
+  <!-- ベース画像 -->
+  <div class="panel">
+
+    <h2>① ベース画像を選択</h2>
+
+    <input
+      type="file"
+      id="baseImageInput"
+      accept="image/*"
+    >
+
+    <p class="hint">
+      画像を選択したあと、画像上の好きな場所をクリックすると
+      マーカーを追加できます。
+    </p>
+
+  </div>
+
+
+  <!-- マップ -->
+  <div class="panel">
+
+    <h2>② マップ</h2>
+
+    <div class="map-wrapper" id="mapWrapper">
+
+      <img
+        id="baseImage"
+        src=""
+        alt="ベース画像"
+      >
+
+    </div>
+
+  </div>
+
+
+  <!-- マーカー一覧 -->
+  <div class="panel">
+
+    <h2>③ 登録したポイント</h2>
+
+    <div id="markerList" class="marker-list">
+
+      <p class="empty">
+        まだポイントがありません。
+      </p>
+
+    </div>
+
+  </div>
+
+</div>
+
+
+<!-- ポップアップ -->
+<div
+  id="previewPopup"
+  class="preview-popup"
+>
+  <img
+    id="previewImage"
+    src=""
+    alt="プレビュー"
+  >
+</div>
+
+
+<script>
+
+  /*
+   * ============================
+   * データ
+   * ============================
+   */
+
+  const markers = [];
+
+  let markerId = 0;
+
+
+  /*
+   * ============================
+   * HTML要素
+   * ============================
+   */
+
+  const baseImageInput =
+    document.getElementById("baseImageInput");
+
+  const baseImage =
+    document.getElementById("baseImage");
+
+  const mapWrapper =
+    document.getElementById("mapWrapper");
+
+  const markerList =
+    document.getElementById("markerList");
+
+  const previewPopup =
+    document.getElementById("previewPopup");
+
+  const previewImage =
+    document.getElementById("previewImage");
+
+
+  /*
+   * ============================
+   * ベース画像を選択
+   * ============================
+   */
+
+  baseImageInput.addEventListener(
+    "change",
+    function(event) {
+
+      const file = event.target.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      const imageURL =
+        URL.createObjectURL(file);
+
+      baseImage.src = imageURL;
+
+    }
+  );
+
+
+  /*
+   * ============================
+   * マップをクリック
+   * ============================
+   */
+
+  baseImage.addEventListener(
+    "click",
+    function(event) {
+
+      /*
+       * 画像の位置とサイズを取得
+       */
+
+      const rect =
+        baseImage.getBoundingClientRect();
+
+
+      /*
+       * クリック位置
+       */
+
+      const clickX =
+        event.clientX - rect.left;
+
+      const clickY =
+        event.clientY - rect.top;
+
+
+      /*
+       * パーセントに変換
+       */
+
+      const x =
+        (clickX / rect.width) * 100;
+
+      const y =
+        (clickY / rect.height) * 100;
+
+
+      /*
+       * マーカーを作成
+       */
+
+      createMarker(x, y);
+
+    }
+  );
+
+
+  /*
+   * ============================
+   * マーカー作成
+   * ============================
+   */
+
+  function createMarker(x, y) {
+
+    markerId++;
+
+    const marker = {
+
+      id: markerId,
+
+      x: x,
+
+      y: y,
+
+      image: null
+
+    };
+
+
+    markers.push(marker);
+
+
+    /*
+     * マーカーを画面に追加
+     */
+
+    renderMarker(marker);
+
+
+    /*
+     * 一覧を更新
+     */
+
+    renderMarkerList();
+
+  }
+
+
+  /*
+   * ============================
+   * マーカーを画面に表示
+   * ============================
+   */
+
+  function renderMarker(marker) {
+
+    const element =
+      document.createElement("div");
+
+
+    element.className = "marker";
+
+    element.dataset.id =
+      marker.id;
+
+
+    /*
+     * 位置
+     */
+
+    element.style.left =
+      marker.x + "%";
+
+    element.style.top =
+      marker.y + "%";
+
+
+    /*
+     * カーソルを合わせたとき
+     */
+
+    element.addEventListener(
+      "mouseenter",
+      function(event) {
+
+        if (!marker.image) {
+          return;
+        }
+
+        previewImage.src =
+          marker.image;
+
+        previewPopup.style.display =
+          "block";
+
+
+        /*
+         * ポップアップ位置
+         */
+
+        previewPopup.style.left =
+          (event.clientX + 20) + "px";
+
+        previewPopup.style.top =
+          (event.clientY + 20) + "px";
+
+      }
+    );
+
+
+    /*
+     * カーソルを外したとき
+     */
+
+    element.addEventListener(
+      "mouseleave",
+      function() {
+
+        previewPopup.style.display =
+          "none";
+
+      }
+    );
+
+
+    /*
+     * マップに追加
+     */
+
+    mapWrapper.appendChild(element);
+
+  }
+
+
+  /*
+   * ============================
+   * マーカー一覧
+   * ============================
+   */
+
+  function renderMarkerList() {
+
+    markerList.innerHTML = "";
+
+
+    if (markers.length === 0) {
+
+      markerList.innerHTML =
+        '<p class="empty">まだポイントがありません。</p>';
+
+      return;
+
+    }
+
+
+    markers.forEach(function(marker) {
+
+      const item =
+        document.createElement("div");
+
+      item.className =
+        "marker-item";
+
+
+      /*
+       * 左側
+       */
+
+      const left =
+        document.createElement("div");
+
+
+      left.innerHTML =
+        `
+          <strong>ポイント ${marker.id}</strong>
+          <br>
+          <small>
+            X: ${marker.x.toFixed(1)}%
+            /
+            Y: ${marker.y.toFixed(1)}%
+          </small>
+        `;
+
+
+      /*
+       * 画像選択
+       */
+
+      const fileInput =
+        document.createElement("input");
+
+      fileInput.type = "file";
+
+      fileInput.accept = "image/*";
+
+
+      fileInput.addEventListener(
+        "change",
+        function(event) {
+
+          const file =
+            event.target.files[0];
+
+          if (!file) {
+            return;
+          }
+
+
+          marker.image =
+            URL.createObjectURL(file);
+
+        }
+      );
+
+
+      /*
+       * 削除ボタン
+       */
+
+      const deleteButton =
+        document.createElement("button");
+
+      deleteButton.textContent =
+        "削除";
+
+      deleteButton.className =
+        "danger";
+
+
+      deleteButton.addEventListener(
+        "click",
+        function() {
+
+          deleteMarker(marker.id);
+
+        }
+      );
+
+
+      /*
+       * 右側
+       */
+
+      const right =
+        document.createElement("div");
+
+      right.style.display =
+        "flex";
+
+      right.style.alignItems =
+        "center";
+
+      right.style.gap =
+        "10px";
+
+
+      right.appendChild(fileInput);
+
+      right.appendChild(deleteButton);
+
+
+      item.appendChild(left);
+
+      item.appendChild(right);
+
+
+      markerList.appendChild(item);
+
+    });
+
+  }
+
+
+  /*
+   * ============================
+   * マーカー削除
+   * ============================
+   */
+
+  function deleteMarker(id) {
+
+    const index =
+      markers.findIndex(
+        marker => marker.id === id
+      );
+
+
+    if (index === -1) {
+      return;
+    }
+
+
+    markers.splice(index, 1);
+
+
+    /*
+     * 画面から削除
+     */
+
+    const element =
+      document.querySelector(
+        `.marker[data-id="${id}"]`
+      );
+
+
+    if (element) {
+
+      element.remove();
+
+    }
+
+
+    renderMarkerList();
+
+  }
+
+
+  /*
+   * ============================
+   * マウス移動時のポップアップ
+   * ============================
+   */
+
+  document.addEventListener(
+    "mousemove",
+    function(event) {
+
+      if (
+        previewPopup.style.display === "block"
+      ) {
+
+        previewPopup.style.left =
+          (event.clientX + 20) + "px";
+
+        previewPopup.style.top =
+          (event.clientY + 20) + "px";
+
+      }
+
+    }
+  );
+
+
+</script>
+
+</body>
+</html>
